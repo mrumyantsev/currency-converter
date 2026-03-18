@@ -1,29 +1,24 @@
 version: '3.8'
 
 services:
-  db:
-    container_name: cc-db
-    hostname: cc-db
+  web:
+    container_name: cc-web
+    hostname: cc-web
     restart: unless-stopped
-    image: postgres:${POSTGRES_VER}-alpine${ALPINE_VER}
-    environment:
-      - PGDATA=/data
-      - POSTGRES_USER=${DB_USERNAME}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_DATABASE}
+    image: nginx:${NGINX_VER}-alpine${ALPINE_VER}
     volumes:
-      - ${DB_LOCAL_DIR}:/data
+      - ${WEB_LOCAL_DIR}:/usr/share/nginx/html
     networks:
-      - cc-internal-network
+      - cc-external-network
     ports:
-      - ${DB_PORT}:5432
+      - "${WEB_PORT}:80"
+    depends_on:
+      - server
 
   server:
     container_name: cc-server
     hostname: cc-server
     restart: unless-stopped
-    depends_on:
-      - db
     build:
       context: .
       dockerfile: ./Dockerfile
@@ -39,21 +34,32 @@ services:
       - cc-internal-network
       - cc-external-network
     ports:
-      - ${HTTP_SERVER_LISTEN_PORT}:${HTTP_SERVER_LISTEN_PORT}
-
-  web:
-    container_name: cc-web
-    hostname: cc-web
-    restart: unless-stopped
+      - "${HTTP_SERVER_LISTEN_PORT}:${HTTP_SERVER_LISTEN_PORT}"
     depends_on:
-      - server
-    image: nginx:${NGINX_VER}-alpine${ALPINE_VER}
+      db:
+        condition: service_healthy
+
+  db:
+    container_name: cc-db
+    hostname: cc-db
+    restart: unless-stopped
+    image: postgres:${POSTGRES_VER}-alpine${ALPINE_VER}
+    environment:
+      - PGDATA=/data
+      - POSTGRES_USER=${DB_USERNAME}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_DATABASE}
     volumes:
-      - ${WEB_LOCAL_DIR}:/usr/share/nginx/html
+      - ${DB_LOCAL_DIR}:/data
     networks:
-      - cc-external-network
+      - cc-internal-network
     ports:
-      - ${WEB_PORT}:80
+      - "${DB_PORT}:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 networks:
   cc-internal-network:
